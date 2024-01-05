@@ -1,6 +1,6 @@
 import paramiko
 
-# establishing ssh connection
+# Establishing ssh connection
 
 def establish_ssh_connection(hostname, port, username, private_key_path):
     # Create an SSH client
@@ -46,9 +46,24 @@ def deploy_tmux(ssh):
                 print(f"Failed to deploy tmux. Error: {stderr.read().decode('utf-8')}")
     except Exception as e:
         print(f"Error during tmux deployment: {e}")
-    finally:
-        # Close the SSH connection
-        ssh.close()
+        return False
+
+# Creating sample file
+
+def create_example_file(ssh):
+    try:
+        # Create example.txt in the home directory
+        create_file_command = 'touch ~/example.txt'
+        _, stdout, stderr = ssh.exec_command(create_file_command)
+
+        # Check if the file creation was successful
+        if stdout.channel.recv_exit_status() == 0:
+            print("Successfully created example.txt")
+        else:
+            print(f"Failed to create example.txt. Error: {stderr.read().decode('utf-8')}")
+    except Exception as e:
+        print(f"Error creating example.txt: {e}")
+        return False
 
 # This is where we read our parsed inventory file and return it
 
@@ -104,6 +119,10 @@ def main():
                 if ssh_connection:
                     # Deploy tmux on the remote host
                     deploy_tmux(ssh_connection)
+                    # Creating a test file
+                    create_example_file(ssh_connection)
+                    # Close the ssh connection
+                    ssh_connection.close()
             else:
                 print(f"Skipping invalid host line: {host}")
 
