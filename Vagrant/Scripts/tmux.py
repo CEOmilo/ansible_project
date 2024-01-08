@@ -15,6 +15,39 @@ def establish_ssh_connection(hostname, port, username, private_key_path):
     except Exception as e:
         print(f"Error connecting to {hostname}: {e}")
         return None
+    
+def is_apache_installed(ssh):
+    try:
+        # Check if apache2 is installed
+        _, stdout, _ = ssh.exec_command("which apache2")
+        return bool(stdout.read().decode('utf-8').strip())
+    except Exception as e:
+        print(f"Error checking apache2 installation: {e}")
+        return False
+    
+# Deploying apache web servers to vm's
+
+def deploy_apache(ssh):
+    try:
+        # Checking if apache is installed
+        if is_apache_installed(ssh):
+            print("apache is already installed on the system.")
+        else:
+            # Run tmux deployment commands
+            apache_install_command = "sudo apt-get update && sudo apt-get install -y apache2"
+            _, stdout, stderr = ssh.exec_command(apache_install_command)
+
+            # Check if the installation was successful
+            if stdout.channel.recv_exit_status() == 0:
+                print("Successfully installed apache")
+            else:
+                print(f"Failed to deploy apache. Error: {stderr.read().decode('utf-8')}")
+    except Exception as e:
+        print(f"Error during apache deployment: {e}")
+        return False
+
+        
+
 
 # Checking if TMUX is installed
     
@@ -93,7 +126,8 @@ def extract_connection_details(host_line, vagrant_inventory_path):
         port = int(parts[2].split("=")[1])
         username = parts[3].split("=")[1].strip("'")
         private_key_path = parts[4].split("=")[1].strip("'")
-        return hostname, port, username, private_key_path
+        vm_identifier = private_key_path.split('/')[-3] if len(private_key_path.split('/')) >= 4 else None
+        return hostname, port, username, private_key_path, vm_identifier
     else:
         return None
 
@@ -105,14 +139,15 @@ def main():
 
     # Parse the Vagrant inventory to extract connection details
     inventory = parse_inventory_file(vagrant_inventory_path)
+    # Define my web server
+    web_server_vm = "vm1"
 
     for group, hosts in inventory.items():
         for host in hosts:
             connection_details = extract_connection_details(host, vagrant_inventory_path)
             if connection_details:
-                hostname, port, username, private_key_path = connection_details
-                print(f"Host: {hostname}, Port: {port}, Username: {username}, Private Key Path: {private_key_path}")
-                # Deploy tmux on the remote host
+                hostname, port, username, private_key_path, vm_identifier = connection_details
+                print(f"VM: {vm_identifier}, Host: {hostname}, Port: {port}, Username: {username}, Private Key Path: {private_key_path}")
                 # Establish SSH connection
                 ssh_connection = establish_ssh_connection(hostname, port, username, private_key_path)
 
@@ -121,6 +156,11 @@ def main():
                     deploy_tmux(ssh_connection)
                     # Creating a test file
                     create_example_file(ssh_connection)
+                    if vm_identifier == web_server_vm :
+                        # Deploy apache on the remote host
+                        deploy_apache(ssh_connection)
+                    else:
+                        print(f"Skipping web server")
                     # Close the ssh connection
                     ssh_connection.close()
             else:

@@ -16,16 +16,17 @@ def parse_inventory_file(inventory_path):
 
 def extract_connection_details(host_line, vagrant_inventory_path):
     parts = host_line.split()
-    print(f"Reading inventory file: {vagrant_inventory_path}")
+    #print(f"Reading inventory file: {vagrant_inventory_path}")
     inventory = parse_inventory_file(vagrant_inventory_path)
-    print(f"Parsed inventory: {inventory}")
+    #print(f"Parsed inventory: {inventory}")
 
     if len(parts) >= 5:
         hostname = parts[1].split("=")[1]
         port = int(parts[2].split("=")[1])
         username = parts[3].split("=")[1].strip("'")
         private_key_path = parts[4].split("=")[1].strip("'")
-        return hostname, port, username, private_key_path
+        vm_identifier = private_key_path.split('/')[-3] if len(private_key_path.split('/')) >= 4 else None
+        return hostname, port, username, private_key_path, vm_identifier
     else:
         return None
 
@@ -41,7 +42,7 @@ if __name__ == "__main__":
         for host in hosts:
             connection_details = extract_connection_details(host, vagrant_inventory_path)
             if connection_details:
-                hostname, port, username, private_key_path = connection_details
-                print(f"Host: {hostname}, Port: {port}, Username: {username}, Private Key Path: {private_key_path}")
+                hostname, port, username, private_key_path, vm_identifier = connection_details
+                print(f"Host: {hostname}, Port: {port}, Username: {username}, Private Key Path: {private_key_path}, VM: {vm_identifier}")
             else:
                 print(f"Skipping invalid host line: {host}")
