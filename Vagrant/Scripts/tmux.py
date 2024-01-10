@@ -1,6 +1,7 @@
 import paramiko
 import logging
 import os
+from install_checker import VMManager
 
 # Setting up logging
 
@@ -17,12 +18,12 @@ def establish_ssh_connection(hostname, port, username, private_key_path):
     try:
         # Connect to the remote host using the provided details
         ssh.connect(hostname, port=port, username=username, key_filename=private_key_path)
-        logger.info("SSH connection established to {hostname}")
+        logger.info(f"SSH connection established to {hostname}")
         return ssh
     except Exception as e:
         logger.info(f"Error connecting to {hostname}: {e}")
         return None
-
+'''
 def is_vsftpd_installed(ssh):
     try:
         # Check if very simple ftpd is installed
@@ -31,19 +32,26 @@ def is_vsftpd_installed(ssh):
     except Exception as e:
         logger.info(f"Error checking vsftpd installation: {e}")
         return False
-    
+'''
 # Deploying NFS server
 
 def deploy_ftp_server(ssh):
     try:
-        if is_vsftpd_installed(ssh):
-            logger.info("FTP is already installed on the system.")
+        logger.info("Deploying ftp server...")
+        # Run nfs server deployment commands
+        ftp_install_command = "sudo apt-get update && sudo apt-get install -y vsftpd"
+        _, stdout, stderr = ssh.exec_command(ftp_install_command)
+
+        # Check if the installation was successful
+        if stdout.channel.recv_exit_status() == 0:
+            logger.info("Successfully installed ftp server")
         else:
-            # Run nfs server deployment commands
-            nfs_install_command = "sudo apt-get update && sudo apt-get install -y nfs-utils* && sudo apt-get install -y rpcbind*"
-            _, stdout, stderr = ssh.exec_command(nfs_install_command)
+            logger.info(f"Failed to deploy the ftp server. Error: {stderr.read().decode('utf-8')}")
+    except Exception as e:
+        logger.info(f"Error during apache deployment: {e}")
+        return False
 
-
+'''
 # Checking if a web server is already installed
 def is_apache_installed(ssh):
     try:
@@ -53,24 +61,21 @@ def is_apache_installed(ssh):
     except Exception as e:
         logger.info(f"Error checking apache2 installation: {e}")
         return False
-    
+'''   
 # Deploying apache web servers to designated vm
 
 def deploy_apache(ssh):
     try:
-        # Checking if apache is installed
-        if is_apache_installed(ssh):
-            logger.info("apache is already installed on the system.")
-        else:
-            # Run apache deployment commands
-            apache_install_command = "sudo apt-get update && sudo apt-get install -y apache2"
-            _, stdout, stderr = ssh.exec_command(apache_install_command)
+        logger.info("Deploying web server...")
+        # Run apache deployment commands
+        apache_install_command = "sudo apt-get update && sudo apt-get install -y apache2"
+        _, stdout, stderr = ssh.exec_command(apache_install_command)
 
-            # Check if the installation was successful
-            if stdout.channel.recv_exit_status() == 0:
-                logger.info("Successfully installed apache")
-            else:
-                logger.info(f"Failed to deploy apache. Error: {stderr.read().decode('utf-8')}")
+        # Check if the installation was successful
+        if stdout.channel.recv_exit_status() == 0:
+            logger.info("Successfully installed apache")
+        else:
+            logger.info(f"Failed to deploy apache. Error: {stderr.read().decode('utf-8')}")
     except Exception as e:
         logger.info(f"Error during apache deployment: {e}")
         return False
@@ -100,7 +105,7 @@ def deploy_website(ssh, website_path):
                 sftp.put(local_file_path, remote_file_path)
     sftp.close()
 
-
+'''
 # Checking if TMUX is installed
     
 def is_tmux_installed(ssh):
@@ -116,23 +121,19 @@ def is_tmux_installed(ssh):
     
 def deploy_tmux(ssh):
     try:
-        # Check if tmux is already installed
-        if is_tmux_installed(ssh):
-            logger.info("tmux is already installed on the system.")
-        else:
-            # Run tmux deployment commands
-            tmux_install_command = "sudo apt-get update && sudo apt-get install -y tmux"
-            _, stdout, stderr = ssh.exec_command(tmux_install_command)
+        # Run tmux deployment commands
+        tmux_install_command = "sudo apt-get update && sudo apt-get install -y tmux"
+        _, stdout, stderr = ssh.exec_command(tmux_install_command)
 
-            # Check if the installation was successful
-            if stdout.channel.recv_exit_status() == 0:
-                logger.info("Successfully deployed tmux")
-            else:
-                logger.info("Failed to deploy tmux. Error: {stderr.read().decode('utf-8')}")
+        # Check if the installation was successful
+        if stdout.channel.recv_exit_status() == 0:
+            logger.info("Successfully deployed tmux")
+        else:
+            logger.info(f"Failed to deploy tmux. Error: {stderr.read().decode('utf-8')}")
     except Exception as e:
         logger.info(f"Error during tmux deployment: {e}")
         return False
-
+'''
 # Creating sample file
 
 def create_example_file(ssh):
@@ -194,11 +195,15 @@ def main():
     # Define my web server
     web_server_vm = "vm1"
     # Define my NFS server
-    nfs_server_vm = "vm2"
+    ftp_server_vm = "vm2"
     # Defining local and remote path for website files, which is the same path
     website_path = "/var/www/html"
     # Storing information in a list of dictionaries
     connection_details_list = []
+    # Creating an instance of my VMManager class
+    # checker = VMManager(ssh=ssh_connection, logger=logger)
+
+
 
     for group, hosts in inventory.items():
         for host in hosts:
@@ -223,23 +228,31 @@ def main():
                 
                 # Establish SSH connection
                 ssh_connection = establish_ssh_connection(hostname, port, username, private_key_path)
+                checker = VMManager(ssh=ssh_connection, logger=logger)
 
                 if ssh_connection:
-                    # Deploy tmux on the remote host
-                    deploy_tmux(ssh_connection)
                     # Creating a test file
                     create_example_file(ssh_connection)
                     if vm_identifier == web_server_vm :
-                        # Deploy apache on the remote host
-                        deploy_apache(ssh_connection)
-                        # Use paramiko to scp the website to the web server
-                        deploy_website(ssh_connection, website_path)
-                    else:
-                        logger.info("Skipping web server")
-                    if vm_identifier = nfs_server_vm:
-                        deploy_nfs_server()
-                    # Close the ssh connection
-                    ssh_connection.close()
+                        checker.set_package_name("apache2")
+                        if checker.is_installed():
+                            # Deploy apache on the remote host
+                            logger.info("apache is already installed on the system.")
+                        else:
+                            #Deploy apache on the remote host
+                            deploy_apache(ssh_connection)
+                            # Use paramiko to scp the website to the web server
+                            deploy_website(ssh_connection, website_path)
+                    elif vm_identifier == ftp_server_vm:
+                        checker.set_package_name("vsftpd")
+                        if checker.is_installed():
+                            # Deploy ftp server on the remote host
+                            logger.info("vsftp is already installed on the system.")
+                        else:
+                            #Deploy apache on the remote host
+                            deploy_ftp_server(ssh_connection)
+                # Close the ssh connection
+                ssh_connection.close()
             else:
                 logger.info(f"Skipping invalid host line: {host}")
 
