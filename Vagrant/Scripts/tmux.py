@@ -1,6 +1,7 @@
 import paramiko
 import logging
 import os
+import time
 from install_checker import VMManager
 
 # Setting up logging
@@ -34,12 +35,11 @@ def is_vsftpd_installed(ssh):
         return False
 '''
 # Deploying NFS server
-
-def deploy_ftp_server(ssh):
+def deploy_nfs_server(ssh):
     try:
         logger.info("Deploying ftp server...")
         # Run nfs server deployment commands
-        ftp_install_command = "sudo apt-get update && sudo apt-get install -y vsftpd"
+        ftp_install_command = "sudo apt-get update && sudo apt-get install -y nfs-kernel-server"
         _, stdout, stderr = ssh.exec_command(ftp_install_command)
 
         # Check if the installation was successful
@@ -47,8 +47,46 @@ def deploy_ftp_server(ssh):
             logger.info("Successfully installed ftp server")
         else:
             logger.info(f"Failed to deploy the ftp server. Error: {stderr.read().decode('utf-8')}")
+        
+        logger.info("Making shared directory...")
+        make_directory_command = "sudo mkdir /share"
+        _, stdout, stderr = ssh.exec_command(make_directory_command)
+
+        # Check if the command was successful
+        if stdout.channel.recv_exit_status() == 0:
+            logger.info("Successfully made the /share directory")
+        else:
+            logger.info(f"Failed to deploy the ftp server. Error: {stderr.read().decode('utf-8')}")
+        
+        # Change permissions for /etc/exports to allow for writing priveleges
+        permission_command = "sudo chmod 666 /etc/exports"
+        _,stdout,stderr = ssh.exec_command(permission_command)
+                
+        # Specify the local and remote file paths
+        local_file_path = '/etc/exports'
+        remote_file_path = '/etc/exports'
+
+        logger.info("Copying config file...")
+        stdin, stdout, stderr = ssh.exec_command('whoami')
+        output = stdout.read().decode('utf-8')
+        logger.info(f"Output of 'whoami'command: {output}")
+        # Open the local file and read its contents
+        with open(local_file_path, 'rb') as local_file:
+            file_contents = local_file.read()
+
+        # Open the remote file and write the contents
+        with ssh.open_sftp() as sftp:
+            with sftp.file(remote_file_path, 'wb') as remote_file:
+                remote_file.write(file_contents)
+        
+        # Restarting nfs service
+        logger.info("Restarting the nfs service...")
+        # Run systemctl deployment commands
+        apache_install_command = "sudo service nfs-kernel-server start && sudo service nfs-kernel-server restart"
+        _, stdout, stderr = ssh.exec_command(apache_install_command)
+
     except Exception as e:
-        logger.info(f"Error during apache deployment: {e}")
+        logger.info(f"Error during nfs deployment: {e}")
         return False
 
 '''
@@ -189,7 +227,6 @@ def extract_connection_details(host_line, vagrant_inventory_path):
 def main():
     # Specify the path to the Vagrant dynamic inventory file
     vagrant_inventory_path = "/home/stafford/Projects/Vagrant/.vagrant/provisioners/ansible/inventory/vagrant_ansible_inventory"
-
     # Parse the Vagrant inventory to extract connection details
     inventory = parse_inventory_file(vagrant_inventory_path)
     # Define my web server
@@ -200,10 +237,6 @@ def main():
     website_path = "/var/www/html"
     # Storing information in a list of dictionaries
     connection_details_list = []
-    # Creating an instance of my VMManager class
-    # checker = VMManager(ssh=ssh_connection, logger=logger)
-
-
 
     for group, hosts in inventory.items():
         for host in hosts:
@@ -228,6 +261,7 @@ def main():
                 
                 # Establish SSH connection
                 ssh_connection = establish_ssh_connection(hostname, port, username, private_key_path)
+                # Creating an instance of my VMManager class
                 checker = VMManager(ssh=ssh_connection, logger=logger)
 
                 if ssh_connection:
@@ -244,13 +278,13 @@ def main():
                             # Use paramiko to scp the website to the web server
                             deploy_website(ssh_connection, website_path)
                     elif vm_identifier == ftp_server_vm:
-                        checker.set_package_name("vsftpd")
+                        checker.set_package_name("nfs-kernel-server")
                         if checker.is_installed():
                             # Deploy ftp server on the remote host
-                            logger.info("vsftp is already installed on the system.")
+                            logger.info("nfs is already installed on the system.")
                         else:
                             #Deploy apache on the remote host
-                            deploy_ftp_server(ssh_connection)
+                            deploy_nfs_server(ssh_connection)
                 # Close the ssh connection
                 ssh_connection.close()
             else:

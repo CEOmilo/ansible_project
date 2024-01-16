@@ -12,10 +12,11 @@ class VMManager:
 
         def is_installed(self):
             try:
+                # Check if the ssh connection is initialized
                 if self.ssh is None:
                     raise ValueError("SSH object is not initialized.")
                 # Check if the package is installed
-                _, stdout, _ = self.ssh.exec_command(f"which {self.package_name}")
+                _, stdout, _ = self.ssh.exec_command(f"dpkg -l | grep {self.package_name}")
                 return bool(stdout.read().decode('utf-8').strip())
             except Exception as e:
                 self.logger.info(f"Error checking {self.package_name} installation: {e}")
