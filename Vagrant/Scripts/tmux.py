@@ -1,7 +1,6 @@
 import paramiko
 import logging
 import os
-import time
 from install_checker import VMManager
 
 # Setting up logging
@@ -24,16 +23,7 @@ def establish_ssh_connection(hostname, port, username, private_key_path):
     except Exception as e:
         logger.info(f"Error connecting to {hostname}: {e}")
         return None
-'''
-def is_vsftpd_installed(ssh):
-    try:
-        # Check if very simple ftpd is installed
-        _, stdout, _ = ssh.exec_command("which vsftpd")
-        return bool(stdout.read().decode('utf-8').strip())
-    except Exception as e:
-        logger.info(f"Error checking vsftpd installation: {e}")
-        return False
-'''
+
 # Deploying NFS server
 def deploy_nfs_server(ssh):
     try:
@@ -51,25 +41,22 @@ def deploy_nfs_server(ssh):
         logger.info("Making shared directory...")
         make_directory_command = "sudo mkdir /share"
         _, stdout, stderr = ssh.exec_command(make_directory_command)
-
-        # Check if the command was successful
-        if stdout.channel.recv_exit_status() == 0:
-            logger.info("Successfully made the /share directory")
-        else:
-            logger.info(f"Failed to deploy the ftp server. Error: {stderr.read().decode('utf-8')}")
         
-        # Change permissions for /etc/exports to allow for writing priveleges
-        permission_command = "sudo chmod 666 /etc/exports"
+        # Change permissions for /etc/exports to allow for writing priveleges and change ownership to vagrant user
+        permission_command = "sudo chmod 666 /etc/exports && sudo chown vagrant:vagrant /share"
         _,stdout,stderr = ssh.exec_command(permission_command)
+        if stdout.channel.recv_exit_status() == 0:
+            logger.info("Successfully changed permissions")
+        else:
+            logger.info(f"Permissions unchanged. Error: {stderr.read().decode('utf-8')}")
                 
         # Specify the local and remote file paths
         local_file_path = '/etc/exports'
         remote_file_path = '/etc/exports'
-
+        
+        # Copy the config file and move it to the vm
         logger.info("Copying config file...")
-        stdin, stdout, stderr = ssh.exec_command('whoami')
-        output = stdout.read().decode('utf-8')
-        logger.info(f"Output of 'whoami'command: {output}")
+        
         # Open the local file and read its contents
         with open(local_file_path, 'rb') as local_file:
             file_contents = local_file.read()
@@ -82,25 +69,46 @@ def deploy_nfs_server(ssh):
         # Restarting nfs service
         logger.info("Restarting the nfs service...")
         # Run systemctl deployment commands
-        apache_install_command = "sudo service nfs-kernel-server start && sudo service nfs-kernel-server restart"
-        _, stdout, stderr = ssh.exec_command(apache_install_command)
-
+        nfs_start_command = "sudo service nfs-kernel-server start && sudo service nfs-kernel-server restart"
+        _, stdout, stderr = ssh.exec_command(nfs_start_command)
+        exit_status = stdout.channel.recv_exit_status()
+        
+        return exit_status
     except Exception as e:
-        logger.info(f"Error during nfs deployment: {e}")
+        logger.info(f"Error during nfs server deployment: {e}")
         return False
+# Setting up client vms for nfs
 
-'''
-# Checking if a web server is already installed
-def is_apache_installed(ssh):
+def client_vms(ssh):
     try:
-        # Check if apache2 is installed
-        _, stdout, _ = ssh.exec_command("which apache2")
-        return bool(stdout.read().decode('utf-8').strip())
+        # Installing nfs for clients
+        logger.info("Installing nfs for clients...")
+        nfs_client_command = "sudo apt install nfs-common -y"
+        ssh.exec_command(nfs_client_command)
+        # Making client directories
+        logger.info("Making client directories")
+        make_directory_command = "sudo mkdir /client"
+        ssh.exec_command(make_directory_command)
+        # Changing permissions and ownership
+        permission_command = "sudo chmod 666 /client && sudo chown vagrant:vagrant /client"
+        _,stdout,stderr = ssh.exec_command(permission_command)
+        if stdout.channel.recv_exit_status() == 0:
+            logger.info("Successfully changed permissions")
+        else:
+            logger.info(f"Permissions unchanged. Error: {stderr.read().decode('utf-8')}")
+        # Mounting filesystem
+        logger.info("Mounting filesystem...")
+        mount_command = "sudo mount 192.168.56.3:/share /client && sudo mount -a"
+        _,stdout,stderr = ssh.exec_command(mount_command)
+        if stdout.channel.recv_exit_status() == 0:
+            logger.info("Successfully mounted filesystem")
+        else:
+            logger.info(f"Permissions unchanged. Error: {stderr.read().decode('utf-8')}")
+        return None
     except Exception as e:
-        logger.info(f"Error checking apache2 installation: {e}")
+        logger.info(f"Error during nfs client deployment: {e}")
         return False
-'''   
-# Deploying apache web servers to designated vm
+# Deploying apache web server to designated vm
 
 def deploy_apache(ssh):
     try:
@@ -114,6 +122,19 @@ def deploy_apache(ssh):
             logger.info("Successfully installed apache")
         else:
             logger.info(f"Failed to deploy apache. Error: {stderr.read().decode('utf-8')}")
+        
+        logger.info("Installing php...")
+        php_install_command = "sudo apt-get update && sudo apt-get install -y php"
+        _, stdout, stderr = ssh.exec_command(apache_install_command)
+
+        # Check if the installation was successful
+        if stdout.channel.recv_exit_status() == 0:
+            logger.info("Successfully installed php")
+        else:
+            logger.info(f"Failed to deploy apache. Error: {stderr.read().decode('utf-8')}")
+
+        
+        return None
     except Exception as e:
         logger.info(f"Error during apache deployment: {e}")
         return False
@@ -127,51 +148,27 @@ def deploy_website(ssh, website_path):
     else:
         logger.info(f"Permissions unchanged. Error: {stderr.read().decode('utf-8')}")
     sftp = ssh.open_sftp()
+
     for root, dirs, files in os.walk(website_path):
-            for file in files:
-                local_file_path = os.path.join(root, file)
-                remote_file_path = os.path.join(website_path, os.path.relpath(local_file_path, website_path))
+        for dir in dirs:
+            remote_dir = os.path.join(website_path, os.path.relpath(os.path.join(root, dir), website_path))
+        
+            # Ensure remote directory exists
+            try:
+                sftp.stat(remote_dir)
+            except FileNotFoundError:
+                # Remote directory doesn't exist, create it
+                sftp.mkdir(remote_dir)
 
-                # Ensure remote directories exist
-                remote_dir = os.path.dirname(remote_file_path)
-                try:
-                    sftp.stat(remote_dir)
-                except FileNotFoundError:
-                    sftp.mkdir(remote_dir)
+        for file in files:
+            local_file_path = os.path.join(root, file)
+            remote_file_path = os.path.join(website_path, os.path.relpath(local_file_path, website_path))
 
-                # Upload the file
-                sftp.put(local_file_path, remote_file_path)
+            # Upload the file
+            sftp.put(local_file_path, remote_file_path)
+
     sftp.close()
 
-'''
-# Checking if TMUX is installed
-    
-def is_tmux_installed(ssh):
-    try:
-        # Check if tmux is already installed
-        _, stdout, _ = ssh.exec_command("which tmux")
-        return bool(stdout.read().decode('utf-8').strip())
-    except Exception as e:
-        logger.info("Error checking tmux installation: {e}")
-        return False
-
-# Deploying TMUX to all of our VM's
-    
-def deploy_tmux(ssh):
-    try:
-        # Run tmux deployment commands
-        tmux_install_command = "sudo apt-get update && sudo apt-get install -y tmux"
-        _, stdout, stderr = ssh.exec_command(tmux_install_command)
-
-        # Check if the installation was successful
-        if stdout.channel.recv_exit_status() == 0:
-            logger.info("Successfully deployed tmux")
-        else:
-            logger.info(f"Failed to deploy tmux. Error: {stderr.read().decode('utf-8')}")
-    except Exception as e:
-        logger.info(f"Error during tmux deployment: {e}")
-        return False
-'''
 # Creating sample file
 
 def create_example_file(ssh):
@@ -232,7 +229,7 @@ def main():
     # Define my web server
     web_server_vm = "vm1"
     # Define my NFS server
-    ftp_server_vm = "vm2"
+    ftp_server_vm = "vm1"
     # Defining local and remote path for website files, which is the same path
     website_path = "/var/www/html"
     # Storing information in a list of dictionaries
@@ -277,14 +274,18 @@ def main():
                             deploy_apache(ssh_connection)
                             # Use paramiko to scp the website to the web server
                             deploy_website(ssh_connection, website_path)
-                    elif vm_identifier == ftp_server_vm:
+                    if vm_identifier == ftp_server_vm:
                         checker.set_package_name("nfs-kernel-server")
                         if checker.is_installed():
-                            # Deploy ftp server on the remote host
+                            # Deploy nfs server on the remote host
                             logger.info("nfs is already installed on the system.")
                         else:
-                            #Deploy apache on the remote host
+                            #Deploy nfs on the remote host
                             deploy_nfs_server(ssh_connection)
+                    if vm_identifier != ftp_server_vm:
+                        client_vms(ssh_connection)
+                    else:
+                        logger.info("This is the nfs server")
                 # Close the ssh connection
                 ssh_connection.close()
             else:
