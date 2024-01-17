@@ -103,7 +103,7 @@ def client_vms(ssh):
         if stdout.channel.recv_exit_status() == 0:
             logger.info("Successfully mounted filesystem")
         else:
-            logger.info(f"Permissions unchanged. Error: {stderr.read().decode('utf-8')}")
+            logger.info(f"Not mounted. Error: {stderr.read().decode('utf-8')}")
         return None
     except Exception as e:
         logger.info(f"Error during nfs client deployment: {e}")
@@ -171,7 +171,7 @@ def deploy_website(ssh, website_path):
 
 # Creating sample file
 
-def create_example_file(ssh):
+def create_testing_files(ssh):
     try:
         # Create example.txt in the home directory
         create_file_command = 'touch ~/example.txt'
@@ -227,9 +227,7 @@ def main():
     # Parse the Vagrant inventory to extract connection details
     inventory = parse_inventory_file(vagrant_inventory_path)
     # Define my web server
-    web_server_vm = "vm1"
-    # Define my NFS server
-    ftp_server_vm = "vm1"
+    server_vm = "vm1"
     # Defining local and remote path for website files, which is the same path
     website_path = "/var/www/html"
     # Storing information in a list of dictionaries
@@ -264,7 +262,7 @@ def main():
                 if ssh_connection:
                     # Creating a test file
                     create_example_file(ssh_connection)
-                    if vm_identifier == web_server_vm :
+                    if vm_identifier == server_vm :
                         checker.set_package_name("apache2")
                         if checker.is_installed():
                             # Deploy apache on the remote host
@@ -274,7 +272,7 @@ def main():
                             deploy_apache(ssh_connection)
                             # Use paramiko to scp the website to the web server
                             deploy_website(ssh_connection, website_path)
-                    if vm_identifier == ftp_server_vm:
+                    if vm_identifier == server_vm:
                         checker.set_package_name("nfs-kernel-server")
                         if checker.is_installed():
                             # Deploy nfs server on the remote host
@@ -282,7 +280,7 @@ def main():
                         else:
                             #Deploy nfs on the remote host
                             deploy_nfs_server(ssh_connection)
-                    if vm_identifier != ftp_server_vm:
+                    if vm_identifier != server_vm:
                         client_vms(ssh_connection)
                     else:
                         logger.info("This is the nfs server")
