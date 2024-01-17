@@ -5,4 +5,4 @@ Vagrant/.vagrant
 Vagrant/Scripts/__pycache__
 
 # Ignore logs
-*.log
+/home/stafford/Projects/Vagrant/*.log
