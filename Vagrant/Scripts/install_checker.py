@@ -1,6 +1,3 @@
-import paramiko
-import logging
-
 class VMManager:
         def __init__(self, logger=None, ssh=None):
             self.ssh = ssh

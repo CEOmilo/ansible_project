@@ -37,22 +37,6 @@ class SSH:
             if self.logger:
                 self.logger.error(f"Error connecting to {self.hostname}: {e}")
             return None
-        
-    def execute_command(self, command):
-        # Check if SSH connection is established
-        if not self.ssh:
-            if self.logger:
-                self.logger.error("SSH connection not established.")
-            return None
-
-        # Execute the specified command
-        try:
-            stdin, stdout, stderr = self.ssh.exec_command(command)
-            return stdout.read().decode('utf-8')
-        except Exception as e:
-            if self.logger:
-                self.logger.error(f"Error executing command: {e}")
-            return None
 
     def close_ssh_connection(self):
         # Close the SSH connection

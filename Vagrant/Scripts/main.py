@@ -2,7 +2,7 @@ import logging
 from inventory_parser import InventoryParser
 from install_checker import VMManager
 from deployment import EnvironmentDeployment
-from ssh_connection import SSH
+from ssh_connection import SSH, logger
 
 # Setting up logging
 
@@ -13,14 +13,14 @@ logger = logging.getLogger(__name__)
 
 def main():
     
-    # Instantiation of Parser with a file path
+    # Instantiation of my inventory parser with a file path
     ansible_parser = InventoryParser("/home/stafford/Projects/Vagrant/.vagrant/provisioners/ansible/inventory/vagrant_ansible_inventory")
 
     # Calling parse_inventory_file on the instance
     inventory_data = ansible_parser.parse_inventory_file()
     
-    # Define my server
-    server_vm = "vm1"
+    # Define my server vm
+    server_vm = "vm3"
     
     # Defining local and remote path for website files, which is the same path
     website_path = "/var/www/html"
@@ -59,13 +59,10 @@ def main():
                 ssh_connection = paramiko_ssh.establish_ssh_connection()
 
                 # Instantiation of my Environment Deployment class
-                environment = EnvironmentDeployment(logger=logger)
+                environment = EnvironmentDeployment(vm_identifier)
 
                 # Instantiation of my VMManager class
                 checker = VMManager(ssh=ssh_connection, logger=logger)
-
-                # Instantiation of my FileMaker class
-                # files = FileMaker(ssh=ssh_connection, logger=logger)
 
                 if ssh_connection:
                     if vm_identifier == server_vm :
@@ -94,8 +91,9 @@ def main():
                             environment.client_vms(ssh_connection)
                     else:
                         logger.info("This is the nfs server")
+                    environment.example_files(ssh_connection, vm_identifier)
                 # Close the ssh connection
-                ssh_connection.close()
+                paramiko_ssh.close_ssh_connection()
             else:
                 logger.info(f"Skipping invalid host line: {host}")
 

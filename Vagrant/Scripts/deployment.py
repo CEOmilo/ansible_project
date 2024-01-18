@@ -1,6 +1,6 @@
 import logging
 import os
-from ssh_connection import SSH
+from inventory_parser import InventoryParser
 
 # Setting up logging
 
@@ -9,9 +9,10 @@ logger = logging.getLogger(__name__)
 
 class EnvironmentDeployment:
     
-    def __init__(self, logger=None):
+    def __init__(self, vm_identifier):
         self.logger = logger
         self.package_name = None
+        self.vm_identifier = vm_identifier
 
     # Deploying NFS server
     
@@ -33,7 +34,7 @@ class EnvironmentDeployment:
             _, stdout, stderr = ssh.exec_command(make_directory_command)
             
             # Change permissions for /etc/exports to allow for writing priveleges and change ownership to vagrant user
-            permission_command = "sudo chmod 666 /etc/exports && sudo chown vagrant:vagrant /share"
+            permission_command = "sudo chmod 777 /etc/exports && sudo chown vagrant:vagrant /share"
             _,stdout,stderr = ssh.exec_command(permission_command)
             if stdout.channel.recv_exit_status() == 0:
                 logger.info("Successfully changed permissions")
@@ -75,27 +76,37 @@ class EnvironmentDeployment:
             # Installing nfs for clients
             logger.info("Installing nfs for clients...")
             nfs_client_command = "sudo apt install nfs-common -y"
-            ssh.exec_command(nfs_client_command)
+            _, stdout, stderr = ssh.exec_command(nfs_client_command)
+            exit_status = stdout.channel.recv_exit_status()
+
+            if exit_status == 0:
+                self.logger.info("Successfully installed nfs-common")
+            else:
+                self.logger.error(f"Failed to install nfs-common. Error: {stderr.read().decode('utf-8')}")
+                return False
+
             # Making client directories
             logger.info("Making client directories")
-            make_directory_command = "sudo mkdir /client"
+            make_directory_command = "sudo mkdir -p /client"
             ssh.exec_command(make_directory_command)
+
             # Changing permissions and ownership
-            permission_command = "sudo chmod 666 /client && sudo chown vagrant:vagrant /client"
+            permission_command = "sudo chmod 755 /client && sudo chown vagrant:vagrant /client" # Directories have to be executable
             _,stdout,stderr = ssh.exec_command(permission_command)
             if stdout.channel.recv_exit_status() == 0:
-                logger.info("Successfully changed permissions")
+               logger.info("Successfully changed permissions")
             else:
-                logger.info(f"Permissions unchanged. Error: {stderr.read().decode('utf-8')}")
+              logger.info(f"Permissions unchanged. Error: {stderr.read().decode('utf-8')}")
             # Mounting filesystem
             logger.info("Mounting filesystem...")
-            mount_command = "sudo mount 192.168.56.3:/share /client && sudo mount -a"
+            mount_command = "sudo mount 192.168.56.5:/share /client"
             _,stdout,stderr = ssh.exec_command(mount_command)
             if stdout.channel.recv_exit_status() == 0:
                 logger.info("Successfully mounted filesystem")
             else:
                 logger.info(f"Not mounted. Error: {stderr.read().decode('utf-8')}")
             return None
+        
         except Exception as e:
             logger.info(f"Error during nfs client deployment: {e}")
             return False
@@ -162,20 +173,45 @@ class EnvironmentDeployment:
                 sftp.put(local_file_path, remote_file_path)
 
         sftp.close()
-
-    # Creating sample file
-
-    def create_testing_files(self, ssh):
+    
+    def example_files(self, ssh, vm_identifier):
+        file_name = (f"I_am_from_{vm_identifier}.txt")
+        content = input(f"Enter the content for {file_name}: ")
+        
         try:
-            # Create example.txt in the home directory
-            create_file_command = 'touch ~/example.txt'
-            _, stdout, stderr = ssh.exec_command(create_file_command)
+            # Specify the local and remote file paths
+            local_file_path = f"/home/stafford/Projects/Vagrant/{file_name}"
+            remote_file_path = f'/home/vagrant/{file_name}' # Never use the tilde, unless you want an hour of your time wasted
 
-            # Check if the file creation was successful
-            if stdout.channel.recv_exit_status() == 0:
-                logger.info("Successfully created example.txt")
+            # Create file
+            with open(local_file_path, 'w') as local_file:
+                local_file.write(content)
+
+            # Copy the config file and move it to the vm
+            self.logger.info(f"Transferring {local_file_path}...")
+            with ssh.open_sftp() as sftp:
+                sftp.put(local_file_path, remote_file_path)            
+            self.logger.info(f"{file_name} created and transferred to the VM successfully")
+
+            # Remove the local file
+            os.remove(local_file_path)
+
+            if vm_identifier != "vm3":
+                # Use sudo to move from home directory to nfs-shared directory
+                self.logger.info("Moving to shared client directory")
+                _,stdout, stderr = ssh.exec_command(f"sudo mv ~/{file_name} /client")
+                if stdout.channel.recv_exit_status() == 0:
+                    self.logger.info("Successfully moved to shared directory")
+                else:
+                    self.logger.info(f"Failed to move. Error: {stderr.read().decode('utf-8')}")
             else:
-                logger.info("Failed to create example.txt. Error: {stderr.read().decode('utf-8')}")
+                 # Use sudo to move from home directory to nfs-shared directory
+                self.logger.info("Moving to shared server directory")
+                _,stdout, stderr = ssh.exec_command(f"sudo mv ~/{file_name} /share")
+                if stdout.channel.recv_exit_status() == 0:
+                    self.logger.info("Successfully moved to shared directory")
+                else:
+                    self.logger.info(f"Failed to move. Error: {stderr.read().decode('utf-8')}")
+
         except Exception as e:
-            logger.info(f"Error creating example.txt: {e}")
-            return False
+            self.logger.error(f"Error creating and transferring {file_name} to the VM: {e}")
