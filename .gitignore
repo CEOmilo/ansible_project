@@ -1,8 +1,0 @@
-# Ignore the .vagrant directory
-Vagrant/.vagrant
-
-# Ignore the pycache
-Vagrant/Scripts/__pycache__
-
-# Ignore logs
-/home/stafford/Projects/Vagrant/*.log
