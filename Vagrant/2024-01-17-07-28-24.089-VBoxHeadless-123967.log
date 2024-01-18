@@ -1,0 +1,12 @@
+Log created: 2024-01-17T07:28:24.896832000Z
+Process ID:  123967 (0x1e43f)
+Parent PID:  1091 (0x443)
+Executable:  /usr/lib/virtualbox/VBoxHeadless
+Arg[0]: /usr/lib/virtualbox/VBoxHeadless
+Arg[1]: --comment
+Arg[2]: Vagrant_vm1_1705446958674_59897
+Arg[3]: --startvm
+Arg[4]: 5f868d35-ea4d-4888-ab35-944fa82258d7
+Arg[5]: --vrde
+Arg[6]: config
+AddRef: illegal refcnt=3221225469 state=2
